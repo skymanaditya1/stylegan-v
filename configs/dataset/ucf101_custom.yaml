@@ -1,4 +1,4 @@
 # @package _group_
 
-name: sky_train
+name: ucf101_custom
 fps: 25

@@ -37,6 +37,10 @@ def generate_videos(
     if motion_z is None and not G.synthesis.motion_encoder is None:
         motion_z = G.synthesis.motion_encoder(c=c, t=ts)['motion_z'] # [...any...]
 
+    # print(f'Shape of motion noise is : {motion_z.shape}')
+
+    # print(len(iters))
+
     for video_idx in iters:
         curr_video = []
 
@@ -45,6 +49,8 @@ def generate_videos(
             curr_z = z[[video_idx]] # [1, z_dim]
             curr_c = c[[video_idx]] # [1, c_dim]
             curr_motion_z = motion_z[[video_idx]]
+
+            # print(f'Current motion z is : {curr_motion_z.shape}')
 
             if curr_c.shape[1] > 0 and truncation_psi < 1:
                 curr_w = G.mapping(curr_z, c=curr_c, truncation_psi=1) # [1, num_ws, w_dim]

@@ -21,6 +21,26 @@ torch.set_grad_enabled(False)
 
 #----------------------------------------------------------------------------
 
+# spherical linear interpolation (slerp)
+def slerp(val, low, high):
+    omega = np.arccos(np.clip(np.dot(low/np.linalg.norm(low), high/np.linalg.norm(high)), -1, 1))
+    so = np.sin(omega)
+    if so == 0:
+        # L'Hopital's rule/LERP
+        return (1.0-val) * low + val * high
+    return np.sin((1.0-val)*omega) / so * low + np.sin(val*omega) / so * high
+    
+# uniform interpolation between two points in latent space
+def interpolate_points(p1, p2, num_interpolate_points):
+    # interpolate ratios between the points
+    ratios = np.linspace(0, 1, num=num_interpolate_points)
+    # linear interpolate vectors
+    vectors = list()
+    for ratio in ratios:
+        v = slerp(ratio, p1, p2)
+        vectors.append(v)
+    return vectors
+
 @click.command()
 @click.pass_context
 @click.option('--network_pkl', help='Network pickle filename', metavar='PATH')
@@ -82,6 +102,8 @@ def generate(
 
     print('Loading networks from "%s"...' % network_pkl)
     device = torch.device('cuda')
+
+    # loading from the pretrained checkpoint
     with dnnlib.util.open_url(network_pkl) as f:
         G = legacy.load_network_pkl(f)['G_ema'].to(device).eval() # type: ignore
 
@@ -91,7 +113,20 @@ def generate(
     np.random.seed(seed)
     torch.manual_seed(seed)
 
+    # sampling z noise vectors
     all_z = torch.randn(num_videos, G.z_dim, device=device) # [curr_batch_size, z_dim]
+
+    # modified code to interpolate between two vectors 
+    # p1 = torch.randn(G.z_dim, device='cpu')
+    # p2 = torch.randn(G.z_dim, device='cpu')
+
+    # # interpolate num_interpolate_points between the two vectors
+    # print(f'Generating using interpolating between latents')
+    # interpolated_vectors = interpolate_points(p1, p2, num_videos)
+    # all_z = torch.vstack(interpolated_vectors)
+    # all_z = all_z.to(device)
+
+    # print(f'Shape of noise latents : {all_z.shape}')
 
     if dataset_path and G.c_dim > 0:
         hydra_cfg_path = hydra_cfg_path or os.path.join(networks_dir, '..', "experiment_config.yaml")
@@ -101,6 +136,7 @@ def generate(
             path=dataset_path, cfg=hydra_cfg.dataset, use_labels=True, max_size=None, xflip=False)
         training_set = dnnlib.util.construct_class_by_name(**training_set_kwargs)
         all_c = [training_set.get_label(random.choice(range(len(training_set)))) for _ in range(num_videos)] # [num_videos, c_dim]
+        print(all_c)
         all_c = torch.from_numpy(np.array(all_c)).to(device) # [num_videos, c_dim]
     elif G.c_dim > 0:
         warnings.warn('Assuming that the conditioning is one-hot!')
@@ -109,6 +145,7 @@ def generate(
         all_c.scatter_(1, c_idx, 1)
     else:
         all_c = torch.zeros(num_videos, G.c_dim, device=device) # [num_videos, c_dim]
+        # print(f'Inside this code block')
 
     ts = time_offset + torch.arange(video_len, device=device).float().unsqueeze(0).repeat(batch_size, 1) / slowmo_coef # [batch_size, video_len]
 

@@ -58,7 +58,7 @@ def create_project_dir(
     objects_to_copy: List[os.PathLike],
     symlinks_to_create: List[os.PathLike],
     quiet: bool=False,
-    ignore_uncommited_changes: bool=False,
+    ignore_uncommited_changes: bool=True,
     overwrite: bool=False):
 
     if is_git_repo(os.getcwd()) and are_there_uncommitted_changes():

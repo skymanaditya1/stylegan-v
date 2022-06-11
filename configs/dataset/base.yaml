@@ -1,13 +1,13 @@
 # @package _group_
 
-path: data/${dataset.name}.zip
+path: data/${dataset.name}
 sampling: ${sampling}
 c_dim: 0
 max_num_frames: 1024
 
 # Default parameters
 fps: 25
-resolution: 256
+resolution: 128
 
 # When used with slurm, this will take the dataset from `path_for_slurm_job`
 # and will copy it into the `path` location

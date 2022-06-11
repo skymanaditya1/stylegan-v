@@ -197,7 +197,7 @@ def calc_metrics(ctx, network_pkl, networks_dir, metrics, data, mirror, gpus, cf
                 conv_clamp=256,
             ),
             cfg=G.cfg,
-            img_resolution=256,
+            img_resolution=128,
             img_channels=3,
             c_dim=G.cfg.c_dim,
         ).eval()

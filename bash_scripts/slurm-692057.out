@@ -1,0 +1,25 @@
+==========================================
+SLURM_JOB_ID = 692057
+SLURM_NODELIST = gnode045
+SLURM_JOB_GPUS = 0,1,2,3
+==========================================
+<=== TRAINING COMMAND START ===>
+TORCH_EXTENSIONS_DIR=/tmp/torch_extensions cd /ssd_scratch/cvit/aditya1/stylegan-v/experiments/mnist_data_stylegan-v_random3_max32_mnist-7870d59 && /ssd_scratch/cvit/aditya1/stylegan-v/env/bin/python src/train.py hydra.run.dir=. hydra.output_subdir=null hydra/job_logging=disabled hydra/hydra_logging=disabled
+<=== TRAINING COMMAND END ===>
+Dir /ssd_scratch/cvit/aditya1/stylegan-v/experiments/mnist_data_stylegan-v_random3_max32_mnist-7870d59 already exists. Overwrite it? [y/N]: Traceback (most recent call last):
+  File "/ssd_scratch/cvit/aditya1/stylegan-v/env/lib/python3.9/site-packages/click/termui.py", line 200, in confirm
+    value = visible_prompt_func("").lower().strip()
+EOFError: EOF when reading a line
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/ssd_scratch/cvit/aditya1/stylegan-v/src/infra/launch.py", line 51, in main
+    create_project_dir(
+  File "/ssd_scratch/cvit/aditya1/stylegan-v/src/infra/utils.py", line 71, in create_project_dir
+    if overwrite or click.confirm(f'Dir {project_dir} already exists. Overwrite it?', default=False):
+  File "/ssd_scratch/cvit/aditya1/stylegan-v/env/lib/python3.9/site-packages/click/termui.py", line 202, in confirm
+    raise Abort()
+click.exceptions.Abort
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

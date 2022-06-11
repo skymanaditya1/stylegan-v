@@ -444,27 +444,29 @@ def training_loop(
             images = torch.cat([G_ema(z=z, c=c, t=t[:, [0]], noise_mode='const').cpu() for z, c, t in zip(vis.grid_z, vis.grid_c, vis.grid_t)]).numpy()
             save_image_grid(images, os.path.join(run_dir, f'fakes{cur_nimg//1000:06d}.jpg'), drange=[-1,1], grid_size=vis.grid_size)
 
+            # Turning off saving videos to prevent OOM error
             # Saving videos
-            videos_diff_motion = generate_videos(G_ema, vis.vgrid_z, vis.vgrid_c, vis.ts, as_grids=True) # [video_len, 3, h, w]
-            if not G_ema.synthesis.motion_encoder is None:
-                with torch.no_grad():
-                    motion_z = G_ema.synthesis.motion_encoder(c=vis.vgrid_c[[0]], t=vis.ts[[0]])['motion_z'] # [1, *motion_dims]
-                    motion_z = motion_z.repeat_interleave(len(vis.ts), dim=0) # [batch_size, *motion_dims]
-                    videos_same_motion = generate_videos(G_ema, vis.vgrid_z, vis.vgrid_c, vis.ts, motion_z=motion_z, as_grids=True) # [video_len, 3, h, w]
+            # videos_diff_motion = generate_videos(G_ema, vis.vgrid_z, vis.vgrid_c, vis.ts, as_grids=True) # [video_len, 3, h, w]
+            # if not G_ema.synthesis.motion_encoder is None:
+            #     with torch.no_grad():
+            #         motion_z = G_ema.synthesis.motion_encoder(c=vis.vgrid_c[[0]], t=vis.ts[[0]])['motion_z'] # [1, *motion_dims]
+            #         motion_z = motion_z.repeat_interleave(len(vis.ts), dim=0) # [batch_size, *motion_dims]
+            #         videos_same_motion = generate_videos(G_ema, vis.vgrid_z, vis.vgrid_c, vis.ts, motion_z=motion_z, as_grids=True) # [video_len, 3, h, w]
 
-                assert videos_diff_motion.shape == videos_same_motion.shape, f"Wrong shape: {videos_diff_motion.shape} != {videos_same_motion.shape}"
+            #     assert videos_diff_motion.shape == videos_same_motion.shape, f"Wrong shape: {videos_diff_motion.shape} != {videos_same_motion.shape}"
 
-                pad_size = 64
-                videos_to_save = torch.cat([
-                    videos_diff_motion,
-                    torch.ones_like(videos_diff_motion[:, :, :, :pad_size]), # Some padding between the videos
-                    videos_same_motion,
-                ], dim=3) # [video_len, 3, h, w + pad_size + w]
-            else:
-                videos_to_save = videos_diff_motion
+            #     pad_size = 64
+            #     videos_to_save = torch.cat([
+            #         videos_diff_motion,
+            #         torch.ones_like(videos_diff_motion[:, :, :, :pad_size]), # Some padding between the videos
+            #         videos_same_motion,
+            #     ], dim=3) # [video_len, 3, h, w + pad_size + w]
+            # else:
+            #     videos_to_save = videos_diff_motion
 
-            videos_to_save = (videos_to_save * 255).to(torch.uint8).permute(0, 2, 3, 1) # [T, H, W, C]
-            torchvision.io.write_video(os.path.join(run_dir, f'{experiment_name}_videos_{cur_nimg//1000:06d}.mp4'), videos_to_save, fps=cfg.dataset.fps, video_codec='h264', options={'crf': '10'})
+            # videos_to_save = (videos_to_save * 255).to(torch.uint8).permute(0, 2, 3, 1) # [T, H, W, C]
+            # torchvision.io.write_video(os.path.join(run_dir, f'{experiment_name}_videos_{cur_nimg//1000:06d}.mp4'), videos_to_save, fps=cfg.dataset.fps, video_codec='h264', options={'crf': '10'})
+            
             # save_video_frames_as_mp4(videos_to_save, cfg.dataset.fps, os.path.join(run_dir, f'{experiment_name}_videos_{cur_nimg//1000:06d}.mp4'))
             # if not stats_tfevents is None:
             #     stats_tfevents.add_video('videos', videos_to_save.unsqueeze(0), global_step=int(cur_nimg / 1e3), walltime=time.time() - start_time)
@@ -482,7 +484,7 @@ def training_loop(
             ('vis', {k: (v.to('cpu') if isinstance(v, torch.Tensor) else v) for k, v in vis.items()}),
             ('stats', {'cur_nimg': cur_nimg, 'cur_tick': cur_tick, 'batch_idx': batch_idx}),
         ]
-        if (rank == 0) and (network_snapshot_ticks is not None) and (done or cur_tick % network_snapshot_ticks == 0):
+        if (network_snapshot_ticks is not None) and (done or cur_tick % network_snapshot_ticks == 0):
             snapshot_data = dict(training_set_kwargs=dict(training_set_kwargs))
             DDP_CONSISTENCY_IGNORE_REGEX = r'.*\.(w_avg|p|rnn\..*|embeds.*\.weight|num_batches_tracked|running_mean|running_var)'
             for name, module in snapshot_modules:
@@ -500,22 +502,22 @@ def training_loop(
                 with open(snapshot_pkl, 'wb') as f:
                     pickle.dump(snapshot_data, f)
 
-        # Evaluate metrics.
-        if (snapshot_data is not None) and (len(metrics) > 0):
-            if rank == 0:
-                print(f'Evaluating metrics for {experiment_name} ...')
-            for metric in metrics:
-                result_dict = metric_main.calc_metric(
-                    metric=metric,
-                    G=snapshot_data['G_ema'],
-                    dataset_kwargs=training_set_kwargs,
-                    num_gpus=num_gpus,
-                    rank=rank,
-                    device=device)
-                if rank == 0:
-                    metric_main.report_metric(result_dict, run_dir=run_dir, snapshot_pkl=snapshot_pkl)
-                stats_metrics.update(result_dict.results)
-        del snapshot_data # conserve memory
+        # # Evaluate metrics.
+        # if (snapshot_data is not None) and (len(metrics) > 0):
+        #     if rank == 0:
+        #         print(f'Evaluating metrics for {experiment_name} ...')
+        #     for metric in metrics:
+        #         result_dict = metric_main.calc_metric(
+        #             metric=metric,
+        #             G=snapshot_data['G_ema'],
+        #             dataset_kwargs=training_set_kwargs,
+        #             num_gpus=num_gpus,
+        #             rank=rank,
+        #             device=device)
+        #         if rank == 0:
+        #             metric_main.report_metric(result_dict, run_dir=run_dir, snapshot_pkl=snapshot_pkl)
+        #         stats_metrics.update(result_dict.results)
+        # del snapshot_data # conserve memory
 
         # Collect statistics.
         for phase in phases:

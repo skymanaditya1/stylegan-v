@@ -288,6 +288,7 @@ def process_hyperparams(cfg: DictConfig):
         'lsundog256':  'https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/transfer-learning-source-nets/lsundog-res256-paper256-kimg100000-noaug.pkl',
     }
 
+    c.resume = 'latest'
     assert c.resume is None or isinstance(c.resume, str)
     args.resume_whole_state = False
     if c.resume is None or c.resume == 'noresume':
