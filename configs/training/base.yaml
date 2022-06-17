@@ -9,7 +9,7 @@ metrics: ["fvd2048_16f", "fvd2048_128f", "fvd2048_128f_subsample8f", "fid50k_ful
 
 aug: ada # One of ['noaug', 'ada', 'fixed']
 mirror: true # Enable dataset x-flips [default: false]
-batch_size: 16
+batch_size: 32
 resume: ~
 
 # General settings

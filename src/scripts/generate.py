@@ -109,22 +109,24 @@ def generate(
 
     os.makedirs(outdir, exist_ok=True)
 
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
+    # random.seed(seed)
+    # np.random.seed(seed)
+    # torch.manual_seed(seed)
 
-    # sampling z noise vectors
-    all_z = torch.randn(num_videos, G.z_dim, device=device) # [curr_batch_size, z_dim]
+    interpolate = True
+    if interpolate:
+        # modified code to interpolate between two vectors 
+        p1 = torch.randn(G.z_dim, device='cpu')
+        p2 = torch.randn(G.z_dim, device='cpu')
 
-    # modified code to interpolate between two vectors 
-    # p1 = torch.randn(G.z_dim, device='cpu')
-    # p2 = torch.randn(G.z_dim, device='cpu')
-
-    # # interpolate num_interpolate_points between the two vectors
-    # print(f'Generating using interpolating between latents')
-    # interpolated_vectors = interpolate_points(p1, p2, num_videos)
-    # all_z = torch.vstack(interpolated_vectors)
-    # all_z = all_z.to(device)
+        # interpolate num_interpolate_points between the two vectors
+        print(f'Generating using interpolating between latents')
+        interpolated_vectors = interpolate_points(p1, p2, num_videos)
+        all_z = torch.vstack(interpolated_vectors)
+        all_z = all_z.to(device)
+    else:
+        # sampling z noise vectors
+        all_z = torch.randn(num_videos, G.z_dim, device=device) # [curr_batch_size, z_dim]
 
     # print(f'Shape of noise latents : {all_z.shape}')
 

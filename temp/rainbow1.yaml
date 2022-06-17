@@ -1,0 +1,142 @@
+model:
+  generator:
+    source: networks
+    use_noise: false
+    w_dim: 512
+    c_dim: ${dataset.c_dim}
+    input:
+      type: temporal
+    motion:
+      time_enc: {}
+      z_dim: 512
+      v_dim: 512
+      motion_z_distance: ${model.generator.time_enc.min_period_len}
+      gen_strategy: conv
+      kernel_size: 11
+      use_fractional_t: true
+      fourier: true
+    sampling: ${sampling}
+    z_dim: 512
+    time_enc:
+      cond_type: concat_const
+      dim: 256
+      min_period_len: 16
+      max_period_len: 1024
+      phase_dropout_std: 1.0
+  discriminator:
+    source: networks
+    mbstd_group_size: 4
+    sampling: ${sampling}
+    concat_res: 16
+    num_frames_div_factor: 2
+    dummy_c: false
+  loss_kwargs:
+    source: StyleGAN2Loss
+    style_mixing_prob: 0.0
+    pl_weight: 0.0
+    motion_reg:
+      coef: 0.0
+    video_consistent_aug: true
+  optim:
+    generator: {}
+    discriminator: {}
+  name: stylegan-v
+dataset:
+  path: data/${dataset.name}
+  sampling: ${sampling}
+  c_dim: 0
+  max_num_frames: 1024
+  fps: 25
+  resolution: 128
+  path_for_slurm_job: ${env.datasets_dir}/${dataset.name}.zip
+  name: rainbow_jelly
+sampling:
+  name: random${sampling.num_frames_per_video}_max${sampling.max_dist}
+  fps: ${dataset.fps}
+  max_num_frames: ${dataset.max_num_frames}
+  num_frames_per_video: 3
+  type: random
+  total_dists:
+  - 1
+  - 2
+  - 4
+  - 8
+  - 16
+  - 32
+  - 64
+  - 128
+  - 256
+  - 512
+  - 1024
+  - 2048
+  max_dist: 32
+env:
+  python_bin: ${env.project_path}/env/bin/python
+  before_train_commands: []
+  torch_extensions_dir: /tmp/torch_extensions
+  objects_to_copy:
+  - ${env.project_path}/src
+  - ${env.project_path}/configs
+  symlinks_to_create:
+  - ${env.project_path}/data
+  tmp_dir: /tmp
+  datasets_dir: null
+  slurm_constraint: v100
+  project_path: /ssd_scratch/cvit/aditya1/stylegan-v
+num_gpus: 2
+print_only: false
+git_hash: 7870d59
+exp_suffix: rainbow_full
+experiment_name: ${dataset.name}_${model.name}_${sampling.name}_${exp_suffix}
+experiment_name_with_hash: ${experiment_name}-${git_hash}
+experiments_dir: experiments
+project_release_dir: ${env.project_path}/${experiments_dir}/${experiment_name_with_hash}
+slurm: false
+job_sequence_length: 1
+slurm_log_dir: ${project_release_dir}
+use_qos: false
+sbatch_args:
+  constraint: ${env.slurm_constraint}
+  time: 1-0
+  gres: gpu:${num_gpus}
+  cpus-per-task: 5
+  mem: 128G
+  cpus-per-gpu: 5
+  comment: ${experiment_name}
+sbatch_args_str: --constraint=v100 --time=1-0 --gres=gpu:2 --cpus-per-task=5 --mem=128G
+  --cpus-per-gpu=5 --comment=rainbow_jelly_stylegan-v_random3_max32_rainbow_full
+env_args:
+  project_dir: ${project_release_dir}
+  python_bin: ${env.python_bin}
+  python_script: ${project_release_dir}/src/infra/slurm_job.py
+env_args_str: --project_dir=/ssd_scratch/cvit/aditya1/stylegan-v/experiments/rainbow_jelly_stylegan-v_random3_max32_rainbow_full-7870d59
+  --python_bin=/ssd_scratch/cvit/aditya1/stylegan-v/env/bin/python --python_script=/ssd_scratch/cvit/aditya1/stylegan-v/experiments/rainbow_jelly_stylegan-v_random3_max32_rainbow_full-7870d59/src/infra/slurm_job.py
+training:
+  outdir: ${project_release_dir}
+  data: ${dataset.path}
+  gpus: ${num_gpus}
+  cfg: auto
+  snap: 50
+  kimg: 25000
+  metrics:
+  - fvd2048_16f
+  - fvd2048_128f
+  - fvd2048_128f_subsample8f
+  - fid50k_full
+  aug: ada
+  mirror: true
+  batch_size: 16
+  resume: null
+  seed: 0
+  dry_run: false
+  cond: false
+  subset: null
+  p: null
+  target: 0.6
+  augpipe: noise
+  freezed: 0
+  fp32: false
+  nhwc: false
+  nobench: false
+  allow_tf32: false
+  num_workers: 3

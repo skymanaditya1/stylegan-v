@@ -50,6 +50,17 @@ def resize_frames(frames, resize_dim):
 
     return resized
 
+
+def opencv_resize_frame(frame, resize_dim):
+    return cv2.resize(frame, (resize_dim, resize_dim), interpolation=cv2.INTER_LINEAR)
+
+def opencv_resize_frames(frames, resize_dim):
+    resized = list()
+    for frame in frames:
+        resized.append(opencv_resize_frame(frame, resize_dim))
+
+    return resized
+
 # sample and save 25 frames from the video 
 def generate_video(video_path, target_video_dir, video_threshold=1e1, video_frames_threshold=25):
 
@@ -91,7 +102,9 @@ def generate_video_dataset(video_dir_path, save_dir_path, frames_to_sample=25, r
         os.makedirs(target_dir, exist_ok=True)
 
         frames = read_frames(video)
-        resized = resize_frames(frames, resize_dim)
+
+        # make the call to resize the frames here
+        resized = opencv_resize_frames(frames, resize_dim)
 
         # write the first 25 resized frames to the disk
         write_frames(target_dir, resized[:frames_to_sample])
@@ -112,7 +125,7 @@ def generate_multidir_videos(video_dir_path, save_dir):
 
     # generate_video_dataset function gets called for all the videos
     for filepath in tqdm(filepaths):
-        target_dir = save_dir + osp.join(filepath.split(video_dir_path, 1)[-1].rsplit('/', 1)[0], osp.basename(filepath).split('.')[0])
+        target_dir = save_dir + '/' + osp.join(filepath.split(video_dir_path, 1)[-1].rsplit('/', 1)[0], osp.basename(filepath).split('.')[0])
 
         generate_dir_from_video(filepath, target_dir)
 
@@ -144,7 +157,9 @@ def main(args):
     # video_dir_path = '/ssd_scratch/cvit/aditya1/FVDEvaluations'
     # save_dir_path = '/ssd_scratch/cvit/aditya1/FVDEvaluations_Frames'
 
-    generate_multidir_videos(video_dir_path, save_dir_path)
+    # generate_multidir_videos(video_dir_path, save_dir_path)
+
+    generate_video_dataset(video_dir_path, save_dir_path)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
