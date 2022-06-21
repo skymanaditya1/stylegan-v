@@ -396,7 +396,12 @@ class Generator(torch.nn.Module):
         assert t.ndim == 2, f"Wrong shape: {t.shape}"
 
         ws = self.mapping(z, c, truncation_psi=truncation_psi, truncation_cutoff=truncation_cutoff) # [batch_size, num_ws, w_dim]
+
+        # print(f'ws shape : {ws.shape}, c shape : {c.shape}, c is : {c}')
+        # assert not True
+
         img = self.synthesis(ws, t=t, c=c, **synthesis_kwargs) # [batch_size * num_frames, c, h, w]
+
 
         return img
 

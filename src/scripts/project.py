@@ -5,11 +5,13 @@ Also optionally generates random videos from the found w
 
 import sys; sys.path.extend(['.', 'src'])
 import os
+import os.path as osp
 import re
 import json
 import random
 from typing import List, Optional, Callable
 from typing import List
+from glob import glob
 
 from PIL import Image
 import click
@@ -50,14 +52,20 @@ def project(
     regularize_noise_weight = 0.0001,
     motion_reg_type: str=None,
 ):
-    num_videos = len(target_images)
+    # num_videos = len(target_images)
+    num_videos = 1
+    num_frames = len(target_images)
+
+    print(f'Number of frames inside project are : {num_frames}')
 
     # misc.assert_shape(target_images, [None, G.img_channels, G.img_resolution, G.img_resolution])
     G = G.eval().requires_grad_(False).to(device) # type: ignore
 
     c = torch.zeros(num_videos, G.c_dim, device=device)
-    ts = torch.zeros(num_videos, 1, device=device)
 
+    ts = torch.arange(num_frames, device=device).unsqueeze(0)
+
+    # ts = torch.zeros(num_videos, 1, device=device)
     # Compute w stats.
     z_samples = np.random.RandomState(123).randn(w_avg_samples, G.z_dim)
     w_samples = G.mapping(torch.from_numpy(z_samples).to(device), None)  # [N, L, C]
@@ -94,6 +102,8 @@ def project(
         w_opt = torch.tensor(w_avg, dtype=torch.float32, device=device, requires_grad=True) # pylint: disable=not-callable
         w_opt = w_opt.repeat(num_videos, G.num_ws, 1).detach().requires_grad_(True) # [num_videos, num_ws, w_dim]
 
+    # print(f'w_opt : {w_opt}')
+
     # w_opt_to_ws = lambda w_opt: torch.cat([w_opt[:, [0]].repeat(1, G.num_ws // 2, 1), w_opt[:, 1:]], dim=1)
 
     # Trying a lot of motions to find which one works best
@@ -103,13 +113,28 @@ def project(
         motion_z_opt = G.synthesis.motion_encoder(c=c, t=ts)['motion_z']
         # motion_z_opt.data = torch.randn_like(motion_z_opt.data) * 1e-3
 
+        # print(f'c shape : {c.shape}, t shape : {ts.shape} motion_z_opt : {motion_z_opt.shape}')
+        # print(f'c is {c}, ts is {ts}, ts shape : {ts.shape}')
+        # # assert not False
+
     motion_z_opt.requires_grad_(True)
 
     w_result = torch.zeros([num_steps] + list(w_opt.shape), dtype=torch.float32, device=device)
-    # optimizer = torch.optim.Adam([w_opt] + [motion_z_opt], betas=(0.9, 0.999), lr=initial_learning_rate)
-    optimizer = torch.optim.Adam([w_opt], betas=(0.9, 0.999), lr=initial_learning_rate)
+
+    optimizer = torch.optim.Adam([w_opt] + [motion_z_opt], betas=(0.9, 0.999), lr=initial_learning_rate)
+    # optimizer = torch.optim.Adam([w_opt], betas=(0.9, 0.999), lr=initial_learning_rate)
 
     for step in tqdm(range(num_steps)):
+        # subsample 10 steps from the ts array
+        gpu_limit_frames = 12
+        indices = torch.randperm(ts.shape[1])[:gpu_limit_frames]
+
+        # sample ts 
+        ts_sampled = ts[:, indices]
+        target_features_sampled = target_features[indices]
+        
+        # print(f'ts_sampled : {ts_sampled.shape}, target_features_sampled : {target_features_sampled.shape}')
+
         # Learning rate schedule.
         t = step / num_steps
         w_noise_scale = w_std * initial_noise_factor * max(0.0, 1.0 - t / noise_ramp_length) ** 2
@@ -124,10 +149,20 @@ def project(
         # Synth images from opt_w.
         w_noise = torch.randn_like(w_opt) * w_noise_scale
         ws = w_opt + w_noise
+
+        # print(f'ws shape is : {ws.shape}, requires grad : {ws.requires_grad}')
+        # assert not True
+
         #ws = w_opt_to_ws(w_opt + w_noise)
         #ws = (w_opt + w_noise).repeat([1, G.mapping.num_ws, 1])
         #synth_images = G.synthesis(ws, c=c, t=ts, motion_z=motion_z_opt + torch.randn_like(motion_z_opt) * w_noise_scale)
-        synth_images = G.synthesis(ws, c=c, t=ts, motion_z=motion_z_opt)
+
+        # check if requires grad for Generator 
+        # for param in G.parameters():
+        #     print(param.requires_grad)
+
+        synth_images = G.synthesis(ws, c=c, t=ts_sampled, motion_z=motion_z_opt)
+        # # assert not True
         #synth_images = G.synthesis(ws, c=c, t=ts)
 
         # Downsample image to 256x256 if it's larger than that. VGG was built for 224x224 images.
@@ -137,7 +172,8 @@ def project(
 
         # Features for synth images.
         synth_features = vgg16(synth_images, resize_images=False, return_lpips=True)
-        dist = (target_features - synth_features).square().sum()
+        # print(f'synth features shape : {synth_features.shape}, target features shape : {target_features_sampled.shape}')
+        dist = (target_features_sampled - synth_features).square().sum()
 
         # Noise regularization.
         if motion_reg_type is None:
@@ -232,7 +268,7 @@ def load_target_images(img_paths: List[os.PathLike], extract_faces: bool=False, 
         images = extract_faces_from_images(imgs=images, ref_image=ref_image)
         for p, img in zip(img_paths, images):
             img.save('/tmp/data/faces_extracted/' + os.path.basename(p), q=95)
-        assert False
+        # # assert not True
         # grid = torch.stack([TVF.to_tensor(x) for x in images])
         # grid = utils.make_grid(grid, nrow=8)
         # save_image(grid, f'/tmp/data/faces_extracted.png')
@@ -281,7 +317,7 @@ def pad_box_to_square(left, upper, right, lower):
         return left, upper, right, lower
     elif w > h:
         diff = w - h
-        assert False, "Not implemented"
+        # # assert not True, "Not implemented"
     else:
         pad = (h - w) // 2
 
@@ -317,11 +353,13 @@ def save_edited_w(
         samples_outdir: os.PathLike=None,
         img_names: List[str]=None,
         stack_samples: bool=False,
-        num_frames: int = 16,
+        num_frames: int = 25,
         each_nth_frame: int = 3,
         all_w: Tensor=None,
         all_motion_z: Tensor=None,
         stacked_samples_out_path: os.PathLike=None,
+        save_images_dir: os.PathLike=None,
+        save_steps: int = 50
     ):
     assert _sentinel is None
 
@@ -329,12 +367,15 @@ def save_edited_w(
 
     os.makedirs(w_outdir, exist_ok=True)
     num_videos = len(img_names)
-    device = all_w.device
+    device = all_w[0].device
 
     if not stack_samples:
-        os.makedirs(samples_outdir, exist_ok=True)
+        # os.makedirs(samples_outdir, exist_ok=True)
+        pass
     else:
         all_samples = []
+
+    # print(f'Size of all_w is : {all_w.shape}')
 
     # Generate samples from the given w and save them.
     with torch.no_grad():
@@ -342,35 +383,73 @@ def save_edited_w(
         c = torch.zeros(num_videos, G.c_dim, device=device) # [num_videos, c_dim]
 
         for i, w in enumerate(all_w):
-            torch.save(w.cpu(), os.path.join(w_outdir, f'{img_names[i]}_w.pt'))
+            # torch.save(w.cpu(), os.path.join(w_outdir, f'{img_names[i]}_w.pt'))
+            # this saves the intermediate w values
+            torch.save(w.cpu(), os.path.join(w_outdir, str((i+1)*save_steps).zfill(4) + '.pt'))
 
             if all_motion_z is None:
+                print(f'Inside all_motion_z None')
                 motion_z = None
             else:
-                motion_z = all_motion_z[i] # [...<any>...]
-                torch.save(motion_z.cpu(), os.path.join(w_outdir, f'{img_names[i]}_motion.pt'))
+                print(f'Inside non None value of motion_z')
+                # motion_z = all_motion_z[i] # [...<any>...]
+                print(f'All_motion_z shape : {all_motion_z.shape}')
+                motion_z = all_motion_z[0]
+                # torch.save(motion_z.cpu(), os.path.join(w_outdir, f'{img_names[i]}_motion.pt'))
+                torch.save(motion_z.cpu(), os.path.join(w_outdir, str((i+1)*save_steps).zfill(4) + '_motion.pt'))
                 motion_z = motion_z.unsqueeze(0).to(device) # [1, ...<any>...]
                 motion_z = torch.randn_like(motion_z)
 
             w = w.unsqueeze(0).to(device) # [1, num_ws, w_dim]
             t = torch.linspace(0, num_frames * (1 + each_nth_frame), num_frames, device=device).unsqueeze(0)
-            imgs = G.synthesis(w, c=c[[i]]], t=t, motion_z=motion_z)
+            print(f'W shape : {w.shape}')
+            w = w.squeeze(0)
+            print(f'W shape after squeeze : {w.shape}')
+            imgs = G.synthesis(w, c=c[[i]], t=t, motion_z=motion_z)
+            print(f'Synthesized image shape : {imgs.shape}') # num_images x channels x dim x dim
             imgs = (imgs * 0.5 + 0.5).clamp(0, 1)
+
+            save_individual_images = True
+            if save_individual_images:
+                images = imgs.cpu()
+                # save every image individually 
+                # output_dir = '/home2/aditya1/cvit/slp/stylegan-v/temp/inversion/individual_frames'
+                individual_images_dir = osp.join(save_images_dir, str((i+1)*save_steps).zfill(4))
+                os.makedirs(individual_images_dir, exist_ok=True)
+                print(f'Saving individual images at path : {individual_images_dir}')
+                for index, frame in enumerate(images):
+                    save_image(frame, osp.join(individual_images_dir, str(index).zfill(2) + '.png'))
+
             grid = utils.make_grid(imgs, nrow=num_frames).cpu()
 
-            if stack_samples:
-                all_samples.append(grid)
-            else:
-                # TVF.to_pil_image(grid).save(os.path.join(samples_outdir, img_names[i]) + '.jpg', q=95)
-                save_image(grid, os.path.join(samples_outdir, img_names[i]) + '.png')
+            # save the grid to the disk with the intermediate i value 
+            stacked_samples_out_path = osp.join(save_images_dir, 'stacked_samples')
+            os.makedirs(stacked_samples_out_path, exist_ok=True)
+            save_grid_path = osp.join(stacked_samples_out_path, str((i+1)*save_steps).zfill(4) + '.png')
+            # save_grid_path = stacked_samples_out_path + '_' + str(i).zfill(2) + '.png'
+            save_image(grid, save_grid_path) # save the images as grid for each individual optimization step
 
-    if stack_samples:
+            if stack_samples: # if the samples from all the optimization steps should be stacked together
+                all_samples.append(grid)
+            # else:
+            #     # TVF.to_pil_image(grid).save(os.path.join(samples_outdir, img_names[i]) + '.jpg', q=95)
+            #     save_image(grid, os.path.join(samples_outdir, img_names[i].split('.')[0]) + '.png')
+
+    if stack_samples: # all the samples are stacked together
         main_grid = torch.stack(all_samples) # [num_videos, c, h, w * num_frames]
         main_grid = utils.make_grid(main_grid, nrow=1)
         # TVF.to_pil_image(main_grid).save(f'{images_dir}.jpg', q=95)
         save_image(main_grid, stacked_samples_out_path)
 
 #----------------------------------------------------------------------------
+
+'''
+Sample script usage 
+CUDA_VISIBLE_DEVICES=1 python src/scripts/project.py \
+    --network_pkl /ssd_scratch/cvit/aditya1/important_checkpoints/how2sign_faces/network-snapshot-025000.pkl \
+    --num_steps 100 --output_dir /ssd_scratch/cvit/aditya1/inversion_test_saved \
+    --save_steps 50 --source_dirs /ssd_scratch/cvit/aditya1/inversion_test_dir
+'''
 
 @click.command()
 @click.pass_context
@@ -380,7 +459,7 @@ def save_edited_w(
 # @click.option('--noise_mode', help='Noise mode', type=click.Choice(['const', 'random', 'none']), default='const', show_default=True)
 # @click.option('--same_motion_codes', type=bool, help='Should we use the same motion codes for all videos?', default=False, show_default=True)
 @click.option('--seed', type=int, help='Random seed', default=42, metavar='DIR')
-@click.option('--images_dir', help='Where to save the output images', type=str, required=True, metavar='DIR')
+@click.option('--images_dirs', help='Dir with input images', type=str, required=False, metavar='DIR')
 # @click.option('--save_as_mp4', help='Should we save as independent frames or mp4?', type=bool, default=False, metavar='BOOL')
 # @click.option('--video_len', help='Number of frames to generate', type=int, default=16, metavar='INT')
 # @click.option('--fps', help='FPS for mp4 saving', type=int, default=25, metavar='INT')
@@ -393,13 +472,16 @@ def save_edited_w(
 @click.option('--num_steps', help='Number of the optimization steps to perform.', default=1000, type=int, metavar='INT')
 @click.option('--stack_samples', help='When saving, should we stack samples together?', default=False, type=bool, metavar='BOOL')
 @click.option('--extract_faces', help='Use FaceNet to extract the face?', default=False, type=bool, metavar='BOOL')
+@click.option('--output_dir', help='Target directory where projected images are saved', type=str, required=True, metavar='DIR')
+@click.option('--save_steps', type=int, help='Steps after which save', default=50, metavar='INT')
+@click.option('--source_dirs', help='Directory where all the videos are saved', type=str, required=True, metavar='DIR')
 
 def main(
     ctx: click.Context,
     network_pkl: str,
     networks_dir: str,
     seed: int,
-    images_dir: str,
+    images_dirs: str,
     # save_as_mp4: bool,
     # video_len: int,
     # fps: int,
@@ -412,6 +494,9 @@ def main(
     num_steps: int,
     stack_samples: bool,
     extract_faces: bool,
+    output_dir: str,
+    save_steps: int,
+    source_dirs: str
 ):
     if network_pkl is None:
         output_regex = "^network-snapshot-\d{6}.pkl$"
@@ -438,38 +523,69 @@ def main(
     np.random.seed(seed)
     torch.manual_seed(seed)
 
-    if zero_periods:
-        G.synthesis.motion_encoder.time_encoder.periods_predictor.weight.data.zero_()
+    # run the optimization step for multiple videos
+    dirs = glob(source_dirs + '/*')
+    print(f'Total number of dirs to be processed : {len(dirs)}')
 
-    if num_weights_to_slice > 0:
-        G.synthesis.motion_encoder.time_encoder.weights[:, -num_weights_to_slice:] = 0.0
+    for images_dir in tqdm(dirs):
+        print(f'Processing dir : {images_dir}')
+        if zero_periods:
+            G.synthesis.motion_encoder.time_encoder.periods_predictor.weight.data.zero_()
 
-    img_paths = sorted([os.path.join(images_dir, p) for p in os.listdir(images_dir) if p.endswith('.jpg')])
-    img_names = [n[:n.rfind('.')] for n in [os.path.basename(p) for p in img_paths]]
-    target_images = load_target_images(img_paths, extract_faces, ref_image=Image.open('/tmp/data/mean.png')) # [b, c, h, w]
+        if num_weights_to_slice > 0:
+            G.synthesis.motion_encoder.time_encoder.weights[:, -num_weights_to_slice:] = 0.0
 
-    assert G.c_dim == 0, "G.c_dim > 0 is not supported"
+        # os.makedirs(images_dir, exist_ok=True)
 
-    w_all_iters, motion_z_final = project(
-        G=G,
-        target_images=target_images,
-        num_steps=num_steps,
-        device=device,
-        use_w_init=use_w_init,
-        use_motion_init=use_motion_init,
-        motion_reg_type=motion_reg_type,
-    ) # [num_videos, num_ws, w_dim]
+        img_paths = sorted([os.path.join(images_dir, p) for p in os.listdir(images_dir) if (p.endswith('.jpg') or p.endswith('.png'))])
 
-    save_edited_w(
-        G=G,
-        w_outdir = f'{images_dir}_projected',
-        samples_outdir = f'{images_dir}_projected_samples',
-        img_names=img_names,
-        stack_samples=stack_samples,
-        all_w = w_all_iters[-1],
-        all_motion_z = motion_z_final,
-        stacked_samples_out_path = f'{images_dir}.png'
-    )
+        if len(img_paths) == 0:
+            continue
+
+        img_names = [n[:n.rfind('.')] for n in [os.path.basename(p) for p in img_paths]]
+        target_images = load_target_images(img_paths, extract_faces, ref_image=Image.open('/ssd_scratch/cvit/aditya1/inversion_test_dir/BlhCuryvt88_24-8-rgb_front_face_cut-0/000.png')) # [b, c, h, w]
+
+        assert G.c_dim == 0, "G.c_dim > 0 is not supported"
+
+        w_all_iters, motion_z_final = project(
+            G=G,
+            target_images=target_images,
+            num_steps=num_steps,
+            device=device,
+            use_w_init=use_w_init,
+            use_motion_init=use_motion_init,
+            motion_reg_type=motion_reg_type,
+        ) # [num_videos, num_ws, w_dim]
+
+        # create save_w in steps of 50
+        # save_steps = 50
+        save_w = [w_all_iters[i] for i in range(len(w_all_iters)) if (i+1)%save_steps == 0]
+
+        current_output_dir = osp.join(output_dir, osp.basename(images_dir))
+
+        save_edited_w(
+            G=G,
+            w_outdir = f'{current_output_dir}/projected',
+            samples_outdir = f'{current_output_dir}/projected_samples',
+            img_names=img_names,
+            stack_samples=stack_samples,
+            all_w = w_all_iters[::save_steps], # this by default saves only the last checkpoint
+            all_motion_z = motion_z_final,
+            stacked_samples_out_path = f'{current_output_dir}/stacked_samples.png',
+            save_images_dir = f'{current_output_dir}',
+            save_steps = save_steps
+        )
+
+        # save_edited_w(
+        #     G=G,
+        #     w_outdir = f'{images_dir}_projected',
+        #     samples_outdir = f'{images_dir}_projected_samples',
+        #     img_names=img_names,
+        #     stack_samples=stack_samples,
+        #     all_w = w_all_iters[-1],
+        #     all_motion_z = motion_z_final,
+        #     stacked_samples_out_path = f'{images_dir}.png'
+        # )
 
 #----------------------------------------------------------------------------
 

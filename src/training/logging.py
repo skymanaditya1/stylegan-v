@@ -50,11 +50,22 @@ def generate_videos(
             curr_c = c[[video_idx]] # [1, c_dim]
             curr_motion_z = motion_z[[video_idx]]
 
-            # print(f'Current motion z is : {curr_motion_z.shape}')
+            print(f'Current motion z is : {curr_motion_z.shape}')
+            print(f'Current ts : {ts}')
+            print(f'Ts shape : {ts.shape}')
 
-            if curr_c.shape[1] > 0 and truncation_psi < 1:
+            # assert not True
+            print(f'Current c shape is : {curr_c.shape}, c is : {c}')
+
+            if True or (curr_c.shape[1] > 0 and truncation_psi < 1):
                 curr_w = G.mapping(curr_z, c=curr_c, truncation_psi=1) # [1, num_ws, w_dim]
                 curr_w = truncation_psi * curr_w + (1 - truncation_psi) * w_avg.unsqueeze(1) # [1, num_ws, w_dim]
+                
+                print(f'curr_w : {curr_w.shape}')
+                print(f'curr_c : {curr_c.shape}, value : {curr_c}')
+
+                assert False
+
                 out = G.synthesis(
                     ws=curr_w,
                     c=curr_c,
@@ -62,6 +73,7 @@ def generate_videos(
                     motion_z=curr_motion_z,
                     noise_mode=noise_mode) # [1 * curr_num_frames, 3, h, w]
             else:
+                print(f'Inside generator')
                 out = G(
                     z=curr_z,
                     c=curr_c,
@@ -69,6 +81,9 @@ def generate_videos(
                     motion_z=curr_motion_z,
                     truncation_psi=truncation_psi,
                     noise_mode=noise_mode) # [1 * curr_num_frames, 3, h, w]
+
+                # print(f'curr_w : {curr_w.shape}')
+                # print(f'curr_c : {curr_c.shape}, value : {curr_c}')
 
             out = (out * 0.5 + 0.5).clamp(0, 1).cpu() # [1 * curr_num_frames, 3, h, w]
             curr_video.append(out)
